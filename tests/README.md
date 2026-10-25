@@ -1,4 +1,23 @@
-# Native key lifetime regression
+# Key lifetime regression
+
+`key-cleanup.py` compiles the actual session-derived timer callback and range
+helpers with a small timer/RNG shim. It forces both range endpoints rather than
+waiting for a random premature cleanup. It needs Python 3 and a C compiler (`CC`
+defaults to `cc`); it does not need root, a module, or a network namespace.
+
+```sh
+python3 tests/key-cleanup.py
+# Optional: demonstrate failure with an older src/timers.c.
+python3 tests/key-cleanup.py --source /path/to/old/timers.c
+```
+
+For `RejectAfterTime = 1-210`, the old callback can schedule cleanup after
+3 seconds, while a key remains valid until 210 seconds. The corrected callback
+always schedules cleanup after 630 seconds. The test also covers the zero/default
+case, a fixed value, and a range up to 65535. This is a callback calculation test;
+it does not model kernel scheduling or concurrency.
+
+## Native integration
 
 `key-lifetime.py` exercises the installed AmneziaWG kernel module over loopback
 inside a temporary network namespace. It generates fresh server/client keys and
@@ -23,6 +42,10 @@ sudo python3 tests/key-lifetime.py --expect fixed
 # Also exercise a wide range crossing the 180-second default (about 4 minutes).
 sudo python3 tests/key-lifetime.py --expect fixed --long
 ```
+
+The fixed native modes require the data-path fixes proposed in #240 as well as
+the cleanup correction. This PR's timer change alone does not make the complete
+native lifetime suite pass on the current master branch.
 
 The affected module ignores `RejectAfterTime = 4` in its data paths: the same
 session still receives and sends data after six seconds. On a fixed module,
